@@ -309,8 +309,7 @@ public class MainActivity extends Activity {
                         android.net.Uri.parse("https://www.google.com"));
                     break;
                 case "Time":
-                    i = new Intent(Intent.ACTION_MAIN);
-                    i.addCategory(Intent.CATEGORY_APP_CLOCK);
+                    i = new Intent(android.provider.AlarmClock.ACTION_SHOW_ALARMS);
                     break;
                 case "Flash":
                     toggleFlash();
