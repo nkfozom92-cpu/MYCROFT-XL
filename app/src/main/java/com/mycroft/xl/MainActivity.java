@@ -13,6 +13,12 @@ import android.speech.tts.TextToSpeech;
 import android.hardware.camera2.CameraManager;
 import java.util.*;
 import java.text.SimpleDateFormat;
+import org.json.JSONObject;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.io.OutputStream;
+import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
 
 public class MainActivity extends Activity {
 
@@ -24,6 +30,8 @@ public class MainActivity extends Activity {
     boolean listening = false;
     boolean torch = false;
     String language = "bn-BD";
+    static final String BACKEND_URL =
+        "https://YOUR-RENDER-SERVICE.onrender.com/chat";
 
     int bg = Color.rgb(9,13,25);
     int purple = Color.rgb(139,92,246);
@@ -192,16 +200,106 @@ public class MainActivity extends Activity {
         String q = input.getText().toString().trim();
         if (q.isEmpty()) return;
 
-        addMessage("YOU",q,true);
+        addMessage("YOU", q, true);
         input.setText("");
 
         InputMethodManager imm =
             (InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);
-        imm.hideSoftInputFromWindow(input.getWindowToken(),0);
+        imm.hideSoftInputFromWindow(input.getWindowToken(), 0);
 
         String answer = processCommand(q);
-        addMessage("MYCROFT XL",answer,false);
-        speak(answer);
+
+        if (answer != null) {
+            addMessage("MYCROFT XL", answer, false);
+            speak(answer);
+        } else {
+            askAI(q);
+        }
+    }
+
+    void askAI(String question) {
+        status.setText("AI is thinking...");
+        addMessage("MYCROFT XL", "আপনার প্রশ্নের উত্তর তৈরি হচ্ছে...", false);
+
+        new Thread(() -> {
+            HttpURLConnection connection = null;
+
+            try {
+                URL url = new URL(BACKEND_URL);
+                connection = (HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("POST");
+                connection.setConnectTimeout(20000);
+                connection.setReadTimeout(90000);
+                connection.setDoOutput(true);
+                connection.setRequestProperty(
+                    "Content-Type", "application/json; charset=UTF-8"
+                );
+
+                JSONObject body = new JSONObject();
+                body.put("message", question);
+
+                byte[] bytes = body.toString().getBytes("UTF-8");
+
+                try (OutputStream os = connection.getOutputStream()) {
+                    os.write(bytes);
+                }
+
+                int code = connection.getResponseCode();
+                InputStream stream = code >= 200 && code < 300
+                    ? connection.getInputStream()
+                    : connection.getErrorStream();
+
+                ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                byte[] data = new byte[4096];
+                int n;
+
+                if (stream != null) {
+                    while ((n = stream.read(data)) != -1) {
+                        buffer.write(data, 0, n);
+                    }
+                    stream.close();
+                }
+
+                String result = buffer.toString("UTF-8");
+                JSONObject json = new JSONObject(result);
+
+                if (code >= 200 && code < 300) {
+                    String reply = json.optString(
+                        "reply", "দুঃখিত, উত্তর পাওয়া যায়নি।"
+                    );
+
+                    runOnUiThread(() -> {
+                        addMessage("MYCROFT XL", reply, false);
+                        status.setText("● ONLINE | AI CONNECTED");
+                        speak(reply);
+                    });
+                } else {
+                    String error = json.optString(
+                        "error", "API request failed: " + code
+                    );
+
+                    runOnUiThread(() -> {
+                        addMessage("SYSTEM", error, false);
+                        status.setText("API ERROR");
+                    });
+                }
+
+            } catch (Exception e) {
+                String error = e.getMessage();
+
+                runOnUiThread(() -> {
+                    addMessage(
+                        "SYSTEM",
+                        "AI সংযোগে সমস্যা হয়েছে: " + error,
+                        false
+                    );
+                    status.setText("Connection error");
+                });
+
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
+        }).start();
     }
 
     String processCommand(String q) {
@@ -252,7 +350,7 @@ public class MainActivity extends Activity {
             return "Hello! আমি Mycroft XL। আপনাকে কীভাবে সাহায্য করব?";
         }
 
-        return "আমি আপনার প্রশ্ন পেয়েছি। পূর্ণ AI উত্তর পেতে AI API সংযুক্ত করতে হবে।";
+        return null;
     }
 
     void startVoice() {
